@@ -42,6 +42,9 @@ const config = {
   accountAddress: process.env.ACCOUNT_ADDRESS,
   privateKey: process.env.PRIVATE_KEY,
 
+  // Staker addresses to monitor (comma-separated)
+  stakerAddresses: process.env.STAKER_ADDRESSES ? process.env.STAKER_ADDRESSES.split(',').map(addr => addr.trim()) : [],
+
   // Automation settings
   cronSchedule: process.env.CRON_SCHEDULE || "0 */12 * * *", // Every 12 hours by default
   minRewardThreshold: process.env.MIN_REWARD_THRESHOLD || "1000000000000000000", // 1 STARK
@@ -127,33 +130,38 @@ async function sendNotification(message, isError = false) {
   }
 }
 
-// Check pending rewards
-async function checkPendingRewards(contract) {
+// Check pending rewards for a specific staker
+async function checkPendingRewards(contract, stakerAddress) {
   try {
     // Get configuration
     const configResult = await contract.get_config();
-    const [stakingContract, starkToken, stakerAddress] = configResult;
+    const [stakingContract, starkToken] = configResult;
 
     // Load staking contract ABI (you'll need to add this)
     // For now, we'll assume rewards can be checked via the staking contract
     // In production, you'd need the actual staking contract ABI
 
-    logger.info("Checking pending rewards...");
+    logger.info(`Checking pending rewards for ${stakerAddress}...`);
     // This is a placeholder - implement actual reward checking logic
     return uint256.bnToUint256(config.minRewardThreshold);
   } catch (error) {
-    logger.error("Failed to check pending rewards:", error);
+    logger.error(`Failed to check pending rewards for ${stakerAddress}:`, error);
     throw error;
   }
 }
 
-// Execute auto-restake
-async function executeAutoRestake(contract, retryCount = 0) {
+// Execute auto-restake for a specific staker or self
+async function executeAutoRestake(contract, stakerAddress = null, retryCount = 0) {
   try {
-    logger.info("Executing auto-restake...");
+    logger.info(`Executing auto-restake${stakerAddress ? ` for ${stakerAddress}` : ' for self'}...`);
 
-    // Call execute_auto_restake
-    const tx = await contract.execute_auto_restake();
+    // Call execute_auto_restake or execute_auto_restake_self
+    let tx;
+    if (stakerAddress) {
+      tx = await contract.execute_auto_restake(stakerAddress);
+    } else {
+      tx = await contract.execute_auto_restake_self();
+    }
 
     logger.info(`Transaction submitted: ${tx.transaction_hash}`);
 
@@ -178,7 +186,8 @@ async function executeAutoRestake(contract, retryCount = 0) {
         }
       }
 
-      const message = `Auto-restake successful! Amount restaked: ${amountRestaked} wei`;
+      const stakerInfo = stakerAddress ? ` for ${stakerAddress}` : '';
+      const message = `Auto-restake successful${stakerInfo}! Amount restaked: ${amountRestaked} wei`;
       logger.info(message);
       await sendNotification(message);
 
@@ -186,6 +195,7 @@ async function executeAutoRestake(contract, retryCount = 0) {
         success: true,
         amount: amountRestaked,
         txHash: tx.transaction_hash,
+        stakerAddress: stakerAddress || config.accountAddress,
       };
     } else {
       throw new Error(`Transaction failed with status: ${receipt.status}`);
@@ -196,13 +206,15 @@ async function executeAutoRestake(contract, retryCount = 0) {
     if (retryCount < config.maxRetries) {
       logger.info(`Retrying in ${config.retryDelay / 1000} seconds...`);
       await new Promise((resolve) => setTimeout(resolve, config.retryDelay));
-      return executeAutoRestake(contract, retryCount + 1);
+      return executeAutoRestake(contract, stakerAddress, retryCount + 1);
     }
 
     const errorMessage = `Auto-restake failed after ${config.maxRetries} attempts: ${error.message}`;
     await sendNotification(errorMessage, true);
     throw error;
   }
+} catch (error) {
+  logger.error(`Auto-restake failed (attempt ${retryCount + 1}):`, error);
 }
 
 // Main keeper function
@@ -212,23 +224,44 @@ async function runKeeper() {
 
     const { provider, account, contract } = await initializeStarknet();
 
-    // Check if it's worth executing (optional)
-    const pendingRewards = await checkPendingRewards(contract);
-    const threshold = BigInt(config.minRewardThreshold);
+    // If no specific staker addresses are configured, restake for self
+    if (!config.stakerAddresses || config.stakerAddresses.length === 0) {
+      logger.info("No staker addresses configured, restaking for self...");
 
-    // For now, always execute. In production, you might want to check
-    // if pending rewards exceed threshold
-    /*
-    if (BigInt(pendingRewards) < threshold) {
-      logger.info(`Pending rewards below threshold. Skipping this run.`);
-      return;
+      // Execute auto-restake for self
+      const result = await executeAutoRestake(contract);
+      logger.info("Self-restake completed successfully", result);
+    } else {
+      // Process each configured staker address
+      logger.info(`Processing ${config.stakerAddresses.length} staker addresses...`);
+
+      for (const stakerAddress of config.stakerAddresses) {
+        try {
+          // Check if it's worth executing (optional)
+          const pendingRewards = await checkPendingRewards(contract, stakerAddress);
+          const threshold = BigInt(config.minRewardThreshold);
+
+          // For now, always execute. In production, you might want to check
+          // if pending rewards exceed threshold
+          /*
+          if (BigInt(pendingRewards) < threshold) {
+            logger.info(`Pending rewards for ${stakerAddress} below threshold. Skipping.`);
+            continue;
+          }
+          */
+
+          // Execute auto-restake for this staker
+          const result = await executeAutoRestake(contract, stakerAddress);
+          logger.info(`Restake for ${stakerAddress} completed successfully`, result);
+        } catch (error) {
+          logger.error(`Failed to restake for ${stakerAddress}:`, error);
+          await sendNotification(`Restake failed for ${stakerAddress}: ${error.message}`, true);
+          // Continue with next staker even if one fails
+        }
+      }
     }
-    */
 
-    // Execute auto-restake
-    const result = await executeAutoRestake(contract);
-
-    logger.info("Keeper run completed successfully", result);
+    logger.info("Keeper run completed successfully");
   } catch (error) {
     logger.error("Keeper run failed:", error);
     await sendNotification(`Keeper run failed: ${error.message}`, true);
@@ -305,4 +338,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { runKeeper, executeAutoRestake };
+module.exports = { runKeeper, executeAutoRestake, checkPendingRewards };

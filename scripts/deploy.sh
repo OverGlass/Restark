@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Contract addresses from your requirements
 STAKING_CONTRACT="0x00ca1702e64c81d9a07b86bd2c540188d92a2c73cf5cc0e508d949015e7e84a7"
 STARK_TOKEN="0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
-STAKER_ADDRESS="0x03912BF7ee089d66bf3D1e25Af6b7458bdb4e4A17DbAd357CBcFD544830F79ea"
+
 
 # Default values
 NETWORK="mainnet"
@@ -88,7 +88,7 @@ fi
 echo -e "${YELLOW}Deploying to $NETWORK...${NC}"
 echo "Staking Contract: $STAKING_CONTRACT"
 echo "STARK Token: $STARK_TOKEN"
-echo "Staker Address: $STAKER_ADDRESS"
+
 echo ""
 
 # Get the owner address (deployer)
@@ -100,7 +100,7 @@ else
 fi
 
 # Prepare constructor arguments
-CONSTRUCTOR_ARGS="$OWNER_ADDRESS $STAKING_CONTRACT $STARK_TOKEN $STAKER_ADDRESS"
+CONSTRUCTOR_ARGS="$OWNER_ADDRESS $STAKING_CONTRACT $STARK_TOKEN"
 
 # Deploy command
 if [ -n "$ACCOUNT_FILE" ] && [ -n "$PRIVATE_KEY" ]; then
@@ -153,7 +153,7 @@ echo "Configuration:"
 echo "  Owner: $OWNER_ADDRESS"
 echo "  Staking Contract: $STAKING_CONTRACT"
 echo "  STARK Token: $STARK_TOKEN"
-echo "  Staker Address: $STAKER_ADDRESS"
+
 echo ""
 
 # Save deployment info
@@ -167,7 +167,7 @@ cat > $DEPLOYMENT_FILE << EOF
         "owner": "$OWNER_ADDRESS",
         "stakingContract": "$STAKING_CONTRACT",
         "starkToken": "$STARK_TOKEN",
-        "stakerAddress": "$STAKER_ADDRESS"
+
     }
 }
 EOF

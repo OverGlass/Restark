@@ -1,25 +1,27 @@
 # Restarke
 
-An automated smart contract for Starknet that handles the complete workflow of claiming staking rewards and automatically restaking them to compound returns.
+An automated smart contract for Starknet that enables any staker to claim and restake their rewards in a single transaction.
 
 ## Overview
 
-Restarke is a Cairo smart contract that automates the following workflow:
+Restarke is a permissionless Cairo smart contract that automates the staking rewards compounding workflow. Any node runner or staker can use this single deployed contract to:
 
 1. **Claim rewards** from the Starknet staking contract
 2. **Approve** the claimed STARK tokens to the staking contract
 3. **Increase stake** by restaking all claimed rewards
 
-This eliminates the need for manual intervention and ensures your staking rewards are continuously compounded.
+All in one transaction, for any staker address!
 
 ## Features
 
-- ✅ **Automated Restaking**: Single function call to execute the entire claim → approve → restake workflow
-- ✅ **Upgradeable**: Built with OpenZeppelin's upgradeable pattern for future improvements
-- ✅ **Access Control**: Owner-only functions for configuration updates and emergency withdrawals
-- ✅ **Event Logging**: Detailed events for tracking all restaking operations
-- ✅ **Emergency Recovery**: Ability to withdraw tokens sent to the contract by mistake
-- ✅ **Configurable**: Update staking contract, token, and staker addresses without redeployment
+- ✅ **Permissionless**: Any staker can use the same deployed contract
+- ✅ **Self-Service**: Connect wallet and restake with one click
+- ✅ **Batch Operations**: Restake for multiple addresses in one transaction
+- ✅ **Automated Restaking**: Single function call for the entire workflow
+- ✅ **Upgradeable**: Built with OpenZeppelin's upgradeable pattern
+- ✅ **Access Control**: Owner-only functions for contract management
+- ✅ **Event Logging**: Detailed events for tracking all operations
+- ✅ **Emergency Recovery**: Ability to withdraw tokens sent by mistake
 
 ## Contract Addresses
 
@@ -27,7 +29,6 @@ The contract interacts with the following Starknet mainnet contracts:
 
 - **Staking Contract**: `0x00ca1702e64c81d9a07b86bd2c540188d92a2c73cf5cc0e508d949015e7e84a7`
 - **STARK Token**: `0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d`
-- **Default Staker Address**: `0x03912BF7ee089d66bf3D1e25Af6b7458bdb4e4A17DbAd357CBcFD544830F79ea`
 
 ## Installation
 
@@ -35,7 +36,7 @@ The contract interacts with the following Starknet mainnet contracts:
 
 - [Scarb](https://docs.swmansion.com/scarb/) - Cairo package manager
 - [Starkli](https://github.com/xJonathanLEI/starkli) - Starknet CLI tool
-- Node.js (optional, for automation scripts)
+- Node.js (optional, for automation scripts or dapp)
 
 ### Setup
 
@@ -78,15 +79,23 @@ starkli deploy \
     ./target/dev/restarke_Restarke.sierra.json \
     <OWNER_ADDRESS> \
     0x00ca1702e64c81d9a07b86bd2c540188d92a2c73cf5cc0e508d949015e7e84a7 \
-    0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d \
-    0x03912BF7ee089d66bf3D1e25Af6b7458bdb4e4A17DbAd357CBcFD544830F79ea
+    0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
 ```
 
 ## Usage
 
-### Execute Auto-Restake
+### For Dapp Users (Coming Soon)
 
-To execute the complete restaking workflow:
+Simply:
+
+1. Connect your Starknet wallet
+2. Click "Restake Rewards"
+3. Approve the transaction
+4. Done! Your rewards are claimed and restaked
+
+### For Developers
+
+#### Restake for Your Own Address
 
 ```bash
 starkli invoke \
@@ -94,19 +103,34 @@ starkli invoke \
     --account <YOUR_ACCOUNT_FILE> \
     --keystore <YOUR_KEYSTORE_FILE> \
     <CONTRACT_ADDRESS> \
-    execute_auto_restake
+    execute_auto_restake_self
 ```
 
-This single call will:
+#### Restake for a Specific Address
 
-1. Claim all pending rewards for the configured staker address
-2. Check the STARK token balance received
-3. Approve the staking contract to spend the tokens
-4. Increase the stake with the full amount
+```bash
+starkli invoke \
+    --rpc https://starknet-mainnet.public.blastapi.io \
+    --account <YOUR_ACCOUNT_FILE> \
+    --keystore <YOUR_KEYSTORE_FILE> \
+    <CONTRACT_ADDRESS> \
+    execute_auto_restake \
+    <STAKER_ADDRESS>
+```
+
+#### Batch Restake for Multiple Addresses
+
+```bash
+starkli invoke \
+    --rpc https://starknet-mainnet.public.blastapi.io \
+    --account <YOUR_ACCOUNT_FILE> \
+    --keystore <YOUR_KEYSTORE_FILE> \
+    <CONTRACT_ADDRESS> \
+    execute_auto_restake_batch \
+    [<STAKER_ADDRESS_1>, <STAKER_ADDRESS_2>, <STAKER_ADDRESS_3>]
+```
 
 ### View Configuration
-
-To check the current contract configuration:
 
 ```bash
 starkli call \
@@ -115,11 +139,9 @@ starkli call \
     get_config
 ```
 
-Returns: `(staking_contract, stark_token, staker_address)`
+Returns: `(staking_contract, stark_token)`
 
 ### Update Configuration (Owner Only)
-
-To update the contract addresses:
 
 ```bash
 starkli invoke \
@@ -129,31 +151,49 @@ starkli invoke \
     <CONTRACT_ADDRESS> \
     update_contracts \
     <NEW_STAKING_CONTRACT> \
-    <NEW_STARK_TOKEN> \
-    <NEW_STAKER_ADDRESS>
+    <NEW_STARK_TOKEN>
 ```
 
-### Emergency Withdrawal (Owner Only)
+## Frontend Integration
 
-To withdraw tokens sent to the contract by mistake:
+### Example using starknet.js:
 
-```bash
-starkli invoke \
-    --rpc https://starknet-mainnet.public.blastapi.io \
-    --account <OWNER_ACCOUNT_FILE> \
-    --keystore <OWNER_KEYSTORE_FILE> \
-    <CONTRACT_ADDRESS> \
-    emergency_withdraw \
-    <TOKEN_ADDRESS> \
-    <RECIPIENT_ADDRESS> \
-    <AMOUNT>
+```javascript
+import { Contract, Provider, Account } from "starknet";
+
+// Connect to Starknet
+const provider = new Provider({ sequencer: { network: "mainnet-alpha" } });
+
+// User connects their wallet (e.g., using get-starknet)
+const account = await connect();
+
+// Initialize Restarke contract
+const restarkeContract = new Contract(
+  restarkeAbi,
+  RESTARKE_CONTRACT_ADDRESS,
+  provider,
+);
+
+// Connect contract to user's account
+restarkeContract.connect(account);
+
+// Execute restake for connected wallet
+async function restakeRewards() {
+  try {
+    const tx = await restarkeContract.execute_auto_restake_self();
+    await provider.waitForTransaction(tx.transaction_hash);
+    console.log("Restaking successful!");
+  } catch (error) {
+    console.error("Restaking failed:", error);
+  }
+}
 ```
 
 ## Automation
 
-### Option 1: Cron Job
+### For Individual Stakers
 
-Create a script to call `execute_auto_restake` periodically:
+Create a simple cron job:
 
 ```bash
 #!/bin/bash
@@ -163,32 +203,28 @@ starkli invoke \
     --account ~/.starkli/account.json \
     --keystore ~/.starkli/keystore.json \
     <CONTRACT_ADDRESS> \
-    execute_auto_restake
+    execute_auto_restake_self
 ```
 
-Add to crontab (daily at 2 AM):
+### For Service Providers
 
-```bash
-0 2 * * * /path/to/restake.sh >> /var/log/restake.log 2>&1
-```
-
-### Option 2: Keeper Bot
-
-A Node.js keeper bot example is provided in the `keeper` directory for more sophisticated automation with error handling and monitoring.
+Use the keeper bot in the `keeper` directory to automate restaking for multiple addresses.
 
 ## Security Considerations
 
-1. **Access Control**: Only the owner can update configurations and perform emergency withdrawals
-2. **Upgradeable**: The contract can be upgraded by the owner to fix bugs or add features
-3. **No Token Storage**: The contract immediately restakes any tokens it receives
-4. **Event Logging**: All operations emit events for transparency and monitoring
+1. **Permissionless Design**: Anyone can call the restake functions - no trust required
+2. **No Fund Custody**: The contract never holds funds, only forwards them
+3. **Access Control**: Only the owner can update contract configurations
+4. **Event Transparency**: All operations emit detailed events
+5. **Upgradeable**: Can be improved without redeployment
 
 ## Events
 
 ### AutoRestakeExecuted
 
-Emitted when the auto-restake workflow completes successfully:
+Emitted when restaking completes successfully:
 
+- `staker_address`: Address whose rewards were restaked
 - `executor`: Address that called the function
 - `rewards_claimed`: Amount of STARK tokens claimed
 - `amount_restaked`: Amount of STARK tokens restaked
@@ -200,32 +236,30 @@ Emitted when contract addresses are updated:
 
 - `staking_contract`: New staking contract address
 - `stark_token`: New STARK token address
-- `staker_address`: New staker address
-
-## Testing
-
-Run the test suite:
-
-```bash
-cd contracts
-scarb test
-```
 
 ## Gas Optimization
 
-The contract is optimized for gas efficiency:
+The contract is optimized for efficiency:
 
 - Single transaction for the entire workflow
 - Minimal storage operations
 - Direct contract calls without intermediate transfers
+- Batch operations for multiple addresses
 
-## Future Improvements
+## Roadmap
 
-- [ ] Support for multiple staker addresses
-- [ ] Configurable restaking thresholds
+- [x] Core restaking functionality
+- [x] Permissionless design for any staker
+- [x] Batch operations support
+- [ ] Web dapp with wallet connection
+- [ ] Mobile app support
+- [ ] Analytics dashboard
 - [ ] Integration with keeper networks
-- [ ] Advanced compounding strategies
-- [ ] Multi-signature support for owner actions
+- [ ] Multi-protocol support
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 

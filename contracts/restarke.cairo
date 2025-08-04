@@ -29,7 +29,6 @@ mod Restarke {
         upgradeable: UpgradeableComponent::Storage,
         staking_contract: ContractAddress,
         stark_token: ContractAddress,
-        staker_address: ContractAddress,
     }
 
     #[event]
@@ -46,6 +45,7 @@ mod Restarke {
     #[derive(Drop, starknet::Event)]
     struct AutoRestakeExecuted {
         #[key]
+        staker_address: ContractAddress,
         executor: ContractAddress,
         rewards_claimed: u256,
         amount_restaked: u256,
@@ -56,7 +56,6 @@ mod Restarke {
     struct ContractsUpdated {
         staking_contract: ContractAddress,
         stark_token: ContractAddress,
-        staker_address: ContractAddress,
     }
 
     #[constructor]
@@ -64,26 +63,23 @@ mod Restarke {
         ref self: ContractState,
         owner: ContractAddress,
         staking_contract: ContractAddress,
-        stark_token: ContractAddress,
-        staker_address: ContractAddress
+        stark_token: ContractAddress
     ) {
         self.ownable.initializer(owner);
         self.staking_contract.write(staking_contract);
         self.stark_token.write(stark_token);
-        self.staker_address.write(staker_address);
     }
 
     #[abi(embed_v0)]
     impl Restarke of super::IRestarke<ContractState> {
-        /// Execute the full auto-restake workflow:
+        /// Execute the full auto-restake workflow for a specific staker:
         /// 1. Claim rewards from staking contract
         /// 2. Approve STARK tokens to staking contract
         /// 3. Increase stake with claimed rewards
-        fn execute_auto_restake(ref self: ContractState) -> u256 {
+        fn execute_auto_restake(ref self: ContractState, staker_address: ContractAddress) -> u256 {
             // Get contract addresses
             let staking_contract = self.staking_contract.read();
             let stark_token = self.stark_token.read();
-            let staker_address = self.staker_address.read();
 
             // Step 1: Claim rewards
             // Call claim_rewards(staker_address) on staking contract
@@ -138,6 +134,7 @@ mod Restarke {
                 // Emit event
                 self.emit(
                     AutoRestakeExecuted {
+                        staker_address,
                         executor: get_caller_address(),
                         rewards_claimed: balance,
                         amount_restaked: balance,
@@ -149,34 +146,59 @@ mod Restarke {
             balance
         }
 
+        /// Execute auto-restake for the caller's own address
+        fn execute_auto_restake_self(ref self: ContractState) -> u256 {
+            let caller = get_caller_address();
+            self.execute_auto_restake(caller)
+        }
+
+        /// Execute auto-restake for multiple stakers in one transaction
+        fn execute_auto_restake_batch(
+            ref self: ContractState,
+            staker_addresses: Array<ContractAddress>
+        ) -> Array<u256> {
+            let mut results = array![];
+            let mut i = 0;
+
+            loop {
+                if i >= staker_addresses.len() {
+                    break;
+                }
+
+                let staker = *staker_addresses.at(i);
+                let amount = self.execute_auto_restake(staker);
+                results.append(amount);
+
+                i += 1;
+            };
+
+            results
+        }
+
         /// Update contract addresses (only owner)
         fn update_contracts(
             ref self: ContractState,
             staking_contract: ContractAddress,
-            stark_token: ContractAddress,
-            staker_address: ContractAddress
+            stark_token: ContractAddress
         ) {
             self.ownable.assert_only_owner();
 
             self.staking_contract.write(staking_contract);
             self.stark_token.write(stark_token);
-            self.staker_address.write(staker_address);
 
             self.emit(
                 ContractsUpdated {
                     staking_contract,
                     stark_token,
-                    staker_address,
                 }
             );
         }
 
         /// Get current configuration
-        fn get_config(self: @ContractState) -> (ContractAddress, ContractAddress, ContractAddress) {
+        fn get_config(self: @ContractState) -> (ContractAddress, ContractAddress) {
             (
                 self.staking_contract.read(),
-                self.stark_token.read(),
-                self.staker_address.read()
+                self.stark_token.read()
             )
         }
 
@@ -212,14 +234,18 @@ mod Restarke {
 
 #[starknet::interface]
 trait IRestarke<TContractState> {
-    fn execute_auto_restake(ref self: TContractState) -> u256;
+    fn execute_auto_restake(ref self: TContractState, staker_address: ContractAddress) -> u256;
+    fn execute_auto_restake_self(ref self: TContractState) -> u256;
+    fn execute_auto_restake_batch(
+        ref self: TContractState,
+        staker_addresses: Array<ContractAddress>
+    ) -> Array<u256>;
     fn update_contracts(
         ref self: TContractState,
         staking_contract: ContractAddress,
-        stark_token: ContractAddress,
-        staker_address: ContractAddress
+        stark_token: ContractAddress
     );
-    fn get_config(self: @TContractState) -> (ContractAddress, ContractAddress, ContractAddress);
+    fn get_config(self: @TContractState) -> (ContractAddress, ContractAddress);
     fn emergency_withdraw(
         ref self: TContractState,
         token: ContractAddress,
